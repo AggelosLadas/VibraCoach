@@ -60,13 +60,15 @@ enum class PredeterminedPattern(
 data class CustomCommand(
     val id: Int,
     val name: String,
-    val pattern: PredeterminedPattern
+    val pattern: PredeterminedPattern,
+    val colorHex: Long = 0xFF4CAF50
 )
 
 data class PlayerBox(
     val id: Int,
     val name: String,
-    val number: String
+    val number: String,
+    val colorHex: Long = 0xFF2196F3
 )
 
 object BasketballEvents {

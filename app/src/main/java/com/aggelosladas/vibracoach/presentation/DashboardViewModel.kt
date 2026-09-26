@@ -24,21 +24,31 @@ class DashboardViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val defaultCommands = listOf(
-        CustomCommand(1, "Whistle", PredeterminedPattern.PATTERN_1),
-        CustomCommand(2, "Foul", PredeterminedPattern.PATTERN_2),
-        CustomCommand(3, "Timeout", PredeterminedPattern.PATTERN_3),
-        CustomCommand(4, "Defense", PredeterminedPattern.PATTERN_4),
-        CustomCommand(5, "Offense", PredeterminedPattern.PATTERN_1),
-        CustomCommand(6, "Substitution", PredeterminedPattern.PATTERN_2),
-        CustomCommand(7, "Full Press", PredeterminedPattern.PATTERN_3),
-        CustomCommand(8, "Zone Play", PredeterminedPattern.PATTERN_4)
+        CustomCommand(1, "Whistle", PredeterminedPattern.PATTERN_1, 0xFF4CAF50),
+        CustomCommand(2, "Foul", PredeterminedPattern.PATTERN_2, 0xFF2196F3),
+        CustomCommand(3, "Timeout", PredeterminedPattern.PATTERN_3, 0xFFFF9800),
+        CustomCommand(4, "Defense", PredeterminedPattern.PATTERN_4, 0xFFE91E63),
+        CustomCommand(5, "Offense", PredeterminedPattern.PATTERN_1, 0xFF9C27B0),
+        CustomCommand(6, "Substitution", PredeterminedPattern.PATTERN_2, 0xFF00BCD4),
+        CustomCommand(7, "Full Press", PredeterminedPattern.PATTERN_3, 0xFFF44336),
+        CustomCommand(8, "Zone Play", PredeterminedPattern.PATTERN_4, 0xFFFFC107)
     )
 
     private val _commands = MutableStateFlow(defaultCommands)
     val commands: StateFlow<List<CustomCommand>> = _commands.asStateFlow()
 
+    private val palette = listOf(
+        0xFF2196F3, 0xFF00BCD4, 0xFF4CAF50, 0xFFFF9800,
+        0xFF9C27B0, 0xFFE91E63, 0xFFF44336, 0xFFFFC107
+    )
+
     private val allRoster = (1..12).map { id ->
-        PlayerBox(id = id, name = "Player $id", number = "$id")
+        PlayerBox(
+            id = id,
+            name = "Player $id",
+            number = "$id",
+            colorHex = palette[(id - 1) % palette.size]
+        )
     }
 
     private val _allPlayers = MutableStateFlow(allRoster)
@@ -61,11 +71,15 @@ class DashboardViewModel(
         }
     }
 
-    fun updateCommand(id: Int, newName: String, newPattern: PredeterminedPattern) {
+    fun updateCommand(id: Int, newName: String, newPattern: PredeterminedPattern, newColorHex: Long) {
         _commands.update { list ->
             list.map { cmd ->
                 if (cmd.id == id) {
-                    cmd.copy(name = newName.ifBlank { "Command $id" }, pattern = newPattern)
+                    cmd.copy(
+                        name = newName.ifBlank { "Command $id" },
+                        pattern = newPattern,
+                        colorHex = newColorHex
+                    )
                 } else {
                     cmd
                 }
@@ -73,13 +87,14 @@ class DashboardViewModel(
         }
     }
 
-    fun updatePlayer(id: Int, newName: String, newNumber: String) {
+    fun updatePlayer(id: Int, newName: String, newNumber: String, newColorHex: Long) {
         _allPlayers.update { list ->
             list.map { p ->
                 if (p.id == id) {
                     p.copy(
                         name = newName.ifBlank { "Player $id" },
-                        number = newNumber.ifBlank { "$id" }
+                        number = newNumber.ifBlank { "$id" },
+                        colorHex = newColorHex
                     )
                 } else {
                     p
