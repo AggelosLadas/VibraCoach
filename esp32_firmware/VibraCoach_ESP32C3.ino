@@ -12,6 +12,7 @@
 #define OLED_SCL 6
 #define OLED_RST 4
 #define LED_PIN 8
+#define MOTOR_PIN 2
 
 U8G2_SSD1306_72X40_ER_F_HW_I2C u8g2(U8G2_R0, OLED_RST, OLED_SCL, OLED_SDA);
 
@@ -20,12 +21,14 @@ volatile bool triggerConnectScreen = false;
 volatile bool triggerDisconnectScreen = false;
 
 volatile int pulsesRemaining = 0;
-volatile bool ledState = false;
-volatile unsigned long ledTimer = 0;
-const int BLINK_SPEED = 90;
+volatile bool indicatorState = false;
+volatile unsigned long pulseTimer = 0;
+const int PULSE_SPEED = 90; // Duration (in ms) of each blink/buzz
 
-void setLed(bool on) {
-    digitalWrite(LED_PIN, on ? LOW : HIGH);
+// Controls both the LED and the Vibration Motor simultaneously
+void setIndicators(bool on) {
+    digitalWrite(LED_PIN, on ? LOW : HIGH); // LED is active-low
+    digitalWrite(MOTOR_PIN, on ? HIGH : LOW); // Motor is active-high
 }
 
 void showScreen(const char *title, const char *msg) {
@@ -37,24 +40,24 @@ void showScreen(const char *title, const char *msg) {
     u8g2.sendBuffer();
 }
 
-void processLedPattern() {
+void processPatterns() {
     if (pulsesRemaining > 0) {
-        if (millis() - ledTimer >= BLINK_SPEED) {
-            ledTimer = millis();
-            ledState = !ledState;
-            setLed(ledState);
+        if (millis() - pulseTimer >= PULSE_SPEED) {
+            pulseTimer = millis();
+            indicatorState = !indicatorState;
+            setIndicators(indicatorState);
             pulsesRemaining--;
         }
     } else {
-        setLed(false);
+        setIndicators(false);
     }
 }
 
-void triggerBlinks(int count) {
+void triggerSignal(int count) {
     pulsesRemaining = (count * 2) - 1;
-    ledState = true;
-    setLed(true);
-    ledTimer = millis();
+    indicatorState = true;
+    setIndicators(true);
+    pulseTimer = millis();
 }
 
 class MyServerCallbacks : public BLEServerCallbacks {
@@ -90,14 +93,16 @@ class MyCharCallbacks : public BLECharacteristicCallbacks {
             count = 1;
         }
 
-        triggerBlinks(count);
+        triggerSignal(count);
     }
 };
 
 void setup() {
     Serial.begin(115200);
+
     pinMode(LED_PIN, OUTPUT);
-    setLed(false);
+    pinMode(MOTOR_PIN, OUTPUT);
+    setIndicators(false);
 
     u8g2.begin();
     u8g2.setBusClock(400000);
@@ -124,7 +129,7 @@ void setup() {
 }
 
 void loop() {
-    processLedPattern();
+    processPatterns();
 
     if (triggerConnectScreen) {
         triggerConnectScreen = false;

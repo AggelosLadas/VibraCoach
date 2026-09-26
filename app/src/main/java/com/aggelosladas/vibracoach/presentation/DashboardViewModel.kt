@@ -7,31 +7,21 @@ import androidx.lifecycle.viewModelScope
 import com.aggelosladas.vibracoach.bluetooth.Esp32BleDevice
 import com.aggelosladas.vibracoach.domain.ConnectionState
 import com.aggelosladas.vibracoach.domain.CustomCommand
+import com.aggelosladas.vibracoach.domain.PlayerBox
 import com.aggelosladas.vibracoach.domain.PredeterminedPattern
 import com.aggelosladas.vibracoach.domain.WearableDevice
-import com.aggelosladas.vibracoach.simulator.SimulatedWearableDevice
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(
-    initialDevice: WearableDevice
+    private val device: WearableDevice
 ) : ViewModel() {
 
-    private val currentDevice = MutableStateFlow(initialDevice)
-
-    val connectionState: StateFlow<ConnectionState> = currentDevice
-        .flatMapLatest { it.connectionState }
+    val connectionState: StateFlow<ConnectionState> = device.connectionState
         .stateIn(viewModelScope, SharingStarted.Eagerly, ConnectionState.DISCONNECTED)
 
-    val isVibrating: StateFlow<Boolean> = currentDevice
-        .flatMapLatest { it.isVibrating }
+    val isVibrating: StateFlow<Boolean> = device.isVibrating
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    val isSimulatorMode: StateFlow<Boolean> = currentDevice
-        .map { it is SimulatedWearableDevice }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, initialDevice is SimulatedWearableDevice)
 
     private val defaultCommands = listOf(
         CustomCommand(1, "Whistle", PredeterminedPattern.PATTERN_1),
@@ -47,6 +37,30 @@ class DashboardViewModel(
     private val _commands = MutableStateFlow(defaultCommands)
     val commands: StateFlow<List<CustomCommand>> = _commands.asStateFlow()
 
+    private val allRoster = (1..12).map { id ->
+        PlayerBox(id = id, name = "Player $id", number = "$id")
+    }
+
+    private val _allPlayers = MutableStateFlow(allRoster)
+    private val _activePlayerIds = MutableStateFlow(listOf(1, 2, 3, 4, 5))
+    private val _selectedPlayerIds = MutableStateFlow<Set<Int>>(emptySet())
+
+    val activePlayers: StateFlow<List<PlayerBox>> = combine(_allPlayers, _activePlayerIds) { roster, activeIds ->
+        activeIds.mapNotNull { id -> roster.find { it.id == id } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val benchPlayers: StateFlow<List<PlayerBox>> = combine(_allPlayers, _activePlayerIds) { roster, activeIds ->
+        roster.filter { it.id !in activeIds }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val selectedPlayerIds: StateFlow<Set<Int>> = _selectedPlayerIds.asStateFlow()
+
+    fun togglePlayerSelection(playerId: Int) {
+        _selectedPlayerIds.update { current ->
+            if (playerId in current) current - playerId else current + playerId
+        }
+    }
+
     fun updateCommand(id: Int, newName: String, newPattern: PredeterminedPattern) {
         _commands.update { list ->
             list.map { cmd ->
@@ -59,35 +73,48 @@ class DashboardViewModel(
         }
     }
 
+    fun updatePlayer(id: Int, newName: String, newNumber: String) {
+        _allPlayers.update { list ->
+            list.map { p ->
+                if (p.id == id) {
+                    p.copy(
+                        name = newName.ifBlank { "Player $id" },
+                        number = newNumber.ifBlank { "$id" }
+                    )
+                } else {
+                    p
+                }
+            }
+        }
+    }
+
+    fun replaceActivePlayer(currentActiveId: Int, newBenchPlayerId: Int) {
+        _activePlayerIds.update { activeList ->
+            activeList.map { id ->
+                if (id == currentActiveId) newBenchPlayerId else id
+            }
+        }
+        _selectedPlayerIds.update { current ->
+            (current - currentActiveId) + newBenchPlayerId
+        }
+    }
+
     fun sendCommand(command: CustomCommand) {
         viewModelScope.launch {
-            currentDevice.value.sendCustomCommand(command.name, command.pattern)
-        }
-    }
-
-    fun switchToSimulator() {
-        viewModelScope.launch {
-            currentDevice.value.disconnect()
-            currentDevice.value = SimulatedWearableDevice()
-        }
-    }
-
-    fun switchToBle(context: Context) {
-        viewModelScope.launch {
-            currentDevice.value.disconnect()
-            currentDevice.value = Esp32BleDevice(context.applicationContext)
+            device.sendCustomCommand(command.name, command.pattern)
+            _selectedPlayerIds.value = emptySet()
         }
     }
 
     fun connect() {
         viewModelScope.launch {
-            currentDevice.value.connect()
+            device.connect()
         }
     }
 
     fun disconnect() {
         viewModelScope.launch {
-            currentDevice.value.disconnect()
+            device.disconnect()
         }
     }
 

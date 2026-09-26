@@ -6,7 +6,6 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,13 +13,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -35,12 +33,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.aggelosladas.vibracoach.domain.ConnectionState
 import com.aggelosladas.vibracoach.domain.CustomCommand
+import com.aggelosladas.vibracoach.domain.PlayerBox
 import com.aggelosladas.vibracoach.domain.PredeterminedPattern
 
 private val AppBackground = Color(0xFF121212)
@@ -52,64 +53,87 @@ private val DangerAccent = Color(0xFFF44336)
 private val TextPrimary = Color(0xFFFFFFFF)
 private val TextSecondary = Color(0xFFAAAAAA)
 
-/**
- * Three simple width buckets replace the old fixed 155dp adaptive grid.
- * A coach's phone is usually held in one hand (2 columns, big targets);
- * a tablet on a sideline stand gets more room to spread the 8 cubes out.
- */
-private enum class DashboardSize { COMPACT, MEDIUM, EXPANDED }
-
 private data class DashboardMetrics(
-    val columns: Int,
-    val cubeHeight: Dp,
-    val cubeTitleSize: androidx.compose.ui.unit.TextUnit,
-    val cubeLabelSize: androidx.compose.ui.unit.TextUnit,
-    val cubeIconSize: Dp,
+    val cols: Int,
+    val isTablet: Boolean,
+    val connectionBarPaddingV: Dp,
+    val titleFontSize: TextUnit,
+    val sectionHeaderFontSize: TextUnit,
+    val commandTitleFontSize: TextUnit,
+    val commandSubFontSize: TextUnit,
+    val commandPaddingV: Dp,
+    val commandPaddingH: Dp,
+    val playerCardHeight: Dp,
+    val playerNumberFontSize: TextUnit,
+    val editIconSize: Dp,
     val gridSpacing: Dp,
-    val horizontalPadding: Dp,
-    val topTitleSize: androidx.compose.ui.unit.TextUnit
+    val outerPadding: Dp
 )
 
-private fun metricsFor(size: DashboardSize): DashboardMetrics = when (size) {
-    DashboardSize.COMPACT -> DashboardMetrics(
-        columns = 2,
-        cubeHeight = 150.dp,
-        cubeTitleSize = 20.sp,
-        cubeLabelSize = 13.sp,
-        cubeIconSize = 20.dp,
-        gridSpacing = 14.dp,
-        horizontalPadding = 16.dp,
-        topTitleSize = 22.sp
-    )
-    DashboardSize.MEDIUM -> DashboardMetrics(
-        columns = 3,
-        cubeHeight = 180.dp,
-        cubeTitleSize = 24.sp,
-        cubeLabelSize = 14.sp,
-        cubeIconSize = 22.dp,
-        gridSpacing = 18.dp,
-        horizontalPadding = 24.dp,
-        topTitleSize = 24.sp
-    )
-    DashboardSize.EXPANDED -> DashboardMetrics(
-        columns = 4,
-        cubeHeight = 210.dp,
-        cubeTitleSize = 28.sp,
-        cubeLabelSize = 16.sp,
-        cubeIconSize = 26.dp,
-        gridSpacing = 22.dp,
-        horizontalPadding = 32.dp,
-        topTitleSize = 26.sp
-    )
+private fun getMetrics(maxWidth: Dp, maxHeight: Dp): DashboardMetrics {
+    val isLandscape = maxWidth > maxHeight
+    val width = maxWidth
+
+    return when {
+        width >= 840.dp -> DashboardMetrics(
+            cols = 4,
+            isTablet = true,
+            connectionBarPaddingV = 10.dp,
+            titleFontSize = 18.sp,
+            sectionHeaderFontSize = 13.sp,
+            commandTitleFontSize = 18.sp,
+            commandSubFontSize = 12.sp,
+            commandPaddingV = 12.dp,
+            commandPaddingH = 12.dp,
+            playerCardHeight = 84.dp,
+            playerNumberFontSize = 32.sp,
+            editIconSize = 18.dp,
+            gridSpacing = 10.dp,
+            outerPadding = 16.dp
+        )
+        width >= 600.dp -> DashboardMetrics(
+            cols = 4,
+            isTablet = true,
+            connectionBarPaddingV = 8.dp,
+            titleFontSize = 16.sp,
+            sectionHeaderFontSize = 12.sp,
+            commandTitleFontSize = 16.sp,
+            commandSubFontSize = 11.sp,
+            commandPaddingV = 10.dp,
+            commandPaddingH = 10.dp,
+            playerCardHeight = 72.dp,
+            playerNumberFontSize = 26.sp,
+            editIconSize = 16.dp,
+            gridSpacing = 8.dp,
+            outerPadding = 12.dp
+        )
+        else -> DashboardMetrics(
+            cols = if (isLandscape) 4 else 2,
+            isTablet = false,
+            connectionBarPaddingV = 4.dp,
+            titleFontSize = 15.sp,
+            sectionHeaderFontSize = 10.sp,
+            commandTitleFontSize = if (isLandscape) 14.sp else 13.sp,
+            commandSubFontSize = 10.sp,
+            commandPaddingV = 4.dp,
+            commandPaddingH = 8.dp,
+            playerCardHeight = if (isLandscape) 60.dp else 58.dp,
+            playerNumberFontSize = 22.sp,
+            editIconSize = 13.dp,
+            gridSpacing = 4.dp,
+            outerPadding = 10.dp
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val isVibrating by viewModel.isVibrating.collectAsState()
-    val isSimulatorMode by viewModel.isSimulatorMode.collectAsState()
     val commands by viewModel.commands.collectAsState()
+    val activePlayers by viewModel.activePlayers.collectAsState()
+    val benchPlayers by viewModel.benchPlayers.collectAsState()
+    val selectedPlayerIds by viewModel.selectedPlayerIds.collectAsState()
 
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -117,6 +141,7 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
     val isConnected = connectionState == ConnectionState.CONNECTED
 
     var editingCommand by remember { mutableStateOf<CustomCommand?>(null) }
+    var editingPlayer by remember { mutableStateOf<PlayerBox?>(null) }
 
     val requiredPermissions = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -147,17 +172,13 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         if (isConnected || connectionState == ConnectionState.SCANNING || connectionState == ConnectionState.CONNECTING) {
             viewModel.disconnect()
         } else {
-            if (isSimulatorMode) {
+            val hasPermissions = requiredPermissions.all { perm ->
+                ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+            }
+            if (hasPermissions) {
                 viewModel.connect()
             } else {
-                val hasPermissions = requiredPermissions.all { perm ->
-                    ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
-                }
-                if (hasPermissions) {
-                    viewModel.connect()
-                } else {
-                    permissionLauncher.launch(requiredPermissions)
-                }
+                permissionLauncher.launch(requiredPermissions)
             }
         }
     }
@@ -168,115 +189,102 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         }
     }
 
-    Scaffold(
-        containerColor = AppBackground,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "VibraCoach",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp
-                    )
-                },
-                actions = {
-                    Surface(
-                        color = if (isSimulatorMode) Color(0xFF263238) else Color(0xFF1B5E20),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .padding(end = 16.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                if (isSimulatorMode) {
-                                    viewModel.switchToBle(context)
-                                } else {
-                                    viewModel.switchToSimulator()
-                                }
-                            }
-                    ) {
-                        Text(
-                            text = if (isSimulatorMode) "DEMO MODE" else "ESP32 BLE",
-                            color = if (isSimulatorMode) Color(0xFF81D4FA) else Color(0xFFA5D6A7),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = AppBackground,
-                    titleContentColor = TextPrimary
-                )
-            )
-        }
-    ) { paddingValues ->
+    Surface(
+        color = AppBackground,
+        modifier = Modifier.fillMaxSize()
+    ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .systemBarsPadding()
         ) {
-            val dashboardSize = when {
-                maxWidth >= 840.dp -> DashboardSize.EXPANDED
-                maxWidth >= 600.dp -> DashboardSize.MEDIUM
-                else -> DashboardSize.COMPACT
-            }
-            val metrics = metricsFor(dashboardSize)
+            val metrics = getMetrics(maxWidth, maxHeight)
+            val commandRows = commands.chunked(metrics.cols)
 
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = metrics.horizontalPadding)
+                    .padding(metrics.outerPadding),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                DeviceStatusCard(
+                CompactConnectionBar(
                     connectionState = connectionState,
                     isVibrating = isVibrating,
-                    isSimulatorMode = isSimulatorMode,
-                    compact = dashboardSize == DashboardSize.COMPACT,
+                    metrics = metrics,
                     onToggleConnection = { handleToggleConnection() }
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(metrics.gridSpacing))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Signal Grid",
-                        color = TextPrimary,
-                        fontSize = metrics.topTitleSize,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Tap to send · hold to edit",
-                        color = TextSecondary,
-                        fontSize = 13.sp
-                    )
-                }
+                Text(
+                    text = "TACTICAL SIGNALS (8 CUBES)",
+                    color = TextSecondary,
+                    fontSize = metrics.sectionHeaderFontSize,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(metrics.gridSpacing / 2))
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(metrics.columns),
-                    horizontalArrangement = Arrangement.spacedBy(metrics.gridSpacing),
+                Column(
                     verticalArrangement = Arrangement.spacedBy(metrics.gridSpacing),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(commands, key = { it.id }) { command ->
-                        CommandCubeCard(
-                            command = command,
-                            enabled = isConnected,
-                            metrics = metrics,
-                            onClick = { viewModel.sendCommand(command) },
-                            onEditClick = { editingCommand = command }
-                        )
+                    commandRows.forEach { rowCommands ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.gridSpacing),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            rowCommands.forEach { command ->
+                                CommandCubeCard(
+                                    command = command,
+                                    enabled = isConnected,
+                                    metrics = metrics,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    onClick = { viewModel.sendCommand(command) },
+                                    onEditClick = { editingCommand = command }
+                                )
+                            }
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(metrics.gridSpacing * 1.2f))
+
+                Text(
+                    text = "ACTIVE PLAYERS ON COURT (5)",
+                    color = TextSecondary,
+                    fontSize = metrics.sectionHeaderFontSize,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+
+                Spacer(modifier = Modifier.height(metrics.gridSpacing / 2))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.gridSpacing),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(metrics.playerCardHeight)
+                ) {
+                    activePlayers.forEach { player ->
+                        val isSelected = player.id in selectedPlayerIds
+                        PlayerCubeCard(
+                            player = player,
+                            isSelected = isSelected,
+                            metrics = metrics,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            onToggle = { viewModel.togglePlayerSelection(player.id) },
+                            onEditClick = { editingPlayer = player }
+                        )
+                    }
+                }
             }
         }
     }
@@ -291,14 +299,29 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
             }
         )
     }
+
+    editingPlayer?.let { player ->
+        EditPlayerDialog(
+            player = player,
+            benchPlayers = benchPlayers,
+            onDismiss = { editingPlayer = null },
+            onSaveNameAndNumber = { updatedName, updatedNumber ->
+                viewModel.updatePlayer(player.id, updatedName, updatedNumber)
+                editingPlayer = null
+            },
+            onSubstitute = { newBenchPlayerId ->
+                viewModel.replaceActivePlayer(player.id, newBenchPlayerId)
+                editingPlayer = null
+            }
+        )
+    }
 }
 
 @Composable
-private fun DeviceStatusCard(
+private fun CompactConnectionBar(
     connectionState: ConnectionState,
     isVibrating: Boolean,
-    isSimulatorMode: Boolean,
-    compact: Boolean,
+    metrics: DashboardMetrics,
     onToggleConnection: () -> Unit
 ) {
     val isConnected = connectionState == ConnectionState.CONNECTED
@@ -314,127 +337,108 @@ private fun DeviceStatusCard(
 
     Surface(
         color = CardSurface,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, CardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.padding(if (compact) 16.dp else 20.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = metrics.connectionBarPaddingV),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isSimulatorMode) "Simulator Wearable" else "ESP32-C3 Wearable",
-                        color = TextPrimary,
-                        fontSize = if (compact) 16.sp else 18.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                Text(
+                    text = "VibraCoach",
+                    color = TextPrimary,
+                    fontSize = metrics.titleFontSize,
+                    fontWeight = FontWeight.Bold
+                )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(if (metrics.isTablet) 10.dp else 8.dp)
+                        .clip(CircleShape)
+                        .background(statusColor)
+                )
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(statusColor)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (connectionState) {
+                        ConnectionState.CONNECTED -> "ESP32 Connected"
+                        ConnectionState.CONNECTING -> "Connecting..."
+                        ConnectionState.SCANNING -> "Scanning..."
+                        else -> "Disconnected"
+                    },
+                    color = TextSecondary,
+                    fontSize = if (metrics.isTablet) 13.sp else 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+
+                if (isVibrating) {
+                    Surface(
+                        color = PrimaryAccent.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
                         Text(
-                            text = when (connectionState) {
-                                ConnectionState.CONNECTED -> "Connected"
-                                ConnectionState.CONNECTING -> "Connecting..."
-                                ConnectionState.SCANNING -> "Scanning for ESP32..."
-                                else -> "Disconnected"
-                            },
-                            color = TextSecondary,
-                            fontSize = 14.sp
+                            text = "Vibrating",
+                            color = PrimaryAccent,
+                            fontSize = if (metrics.isTablet) 11.sp else 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                }
-
-                // Minimum 48dp touch target height, per accessibility guidance -
-                // this is the button a coach hits mid-session, it must never be fumbled.
-                FilledTonalButton(
-                    onClick = onToggleConnection,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (isConnected) Color(0xFF2C2C2C) else PrimaryAccent,
-                        contentColor = if (isConnected) TextPrimary else Color.White
-                    ),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        text = when (connectionState) {
-                            ConnectionState.CONNECTED -> "Disconnect"
-                            ConnectionState.CONNECTING, ConnectionState.SCANNING -> "Cancel"
-                            else -> "Connect"
-                        },
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
                 }
             }
 
-            AnimatedVisibility(visible = isConnected) {
-                Column {
-                    HorizontalDivider(
-                        color = CardBorder,
-                        modifier = Modifier.padding(vertical = 14.dp)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Haptic Engine",
-                            color = TextSecondary,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = if (isVibrating) "Playing signal..." else "Idle",
-                            color = if (isVibrating) PrimaryAccent else TextSecondary,
-                            fontSize = 13.sp,
-                            fontWeight = if (isVibrating) FontWeight.Medium else FontWeight.Normal
-                        )
-                    }
-                }
+            Button(
+                onClick = onToggleConnection,
+                contentPadding = PaddingValues(
+                    horizontal = if (metrics.isTablet) 14.dp else 10.dp,
+                    vertical = 2.dp
+                ),
+                modifier = Modifier.height(if (metrics.isTablet) 34.dp else 28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isConnected) Color(0xFF2C2C2C) else PrimaryAccent,
+                    contentColor = if (isConnected) TextPrimary else Color.White
+                )
+            ) {
+                Text(
+                    text = when (connectionState) {
+                        ConnectionState.CONNECTED -> "Disconnect"
+                        ConnectionState.CONNECTING, ConnectionState.SCANNING -> "Cancel"
+                        else -> "Connect"
+                    },
+                    fontSize = if (metrics.isTablet) 13.sp else 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
 }
 
-/**
- * The whole cube is the tap target for sending a command - a coach glancing
- * at the sideline shouldn't have to aim for a small icon. Editing moves to a
- * long-press on the cube itself, plus a small always-visible edit affordance
- * in the corner (>=44dp touch area) for anyone who prefers tapping it directly.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommandCubeCard(
     command: CustomCommand,
     enabled: Boolean,
     metrics: DashboardMetrics,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onEditClick: () -> Unit
 ) {
-    val alpha = if (enabled) 1f else 0.45f
+    val alpha = if (enabled) 1f else 0.4f
     val haptic = LocalHapticFeedback.current
 
     Surface(
         color = CardSurface.copy(alpha = alpha),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, CardBorder),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(metrics.cubeHeight)
-            .clip(RoundedCornerShape(20.dp))
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
                 enabled = enabled,
                 onClick = onClick,
@@ -447,7 +451,7 @@ private fun CommandCubeCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(horizontal = metrics.commandPaddingH, vertical = metrics.commandPaddingV),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -457,26 +461,29 @@ private fun CommandCubeCard(
             ) {
                 Surface(
                     color = Color(0xFF2C2C2C),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
                         text = "#${command.id}",
                         color = SecondaryAccent.copy(alpha = alpha),
-                        fontSize = 12.sp,
+                        fontSize = if (metrics.isTablet) 11.sp else 10.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
 
-                IconButton(
-                    onClick = onEditClick,
-                    modifier = Modifier.size(44.dp)
+                Box(
+                    modifier = Modifier
+                        .size(if (metrics.isTablet) 26.dp else 20.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onEditClick),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
                         contentDescription = "Edit ${command.name}",
                         tint = TextSecondary.copy(alpha = alpha),
-                        modifier = Modifier.size(metrics.cubeIconSize * 0.8f)
+                        modifier = Modifier.size(metrics.editIconSize)
                     )
                 }
             }
@@ -484,28 +491,83 @@ private fun CommandCubeCard(
             Text(
                 text = command.name,
                 color = TextPrimary.copy(alpha = alpha),
-                fontSize = metrics.cubeTitleSize,
+                fontSize = metrics.commandTitleFontSize,
                 fontWeight = FontWeight.Bold,
-                maxLines = 2
+                maxLines = 1
             )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.GraphicEq,
                     contentDescription = null,
                     tint = PrimaryAccent.copy(alpha = alpha),
-                    modifier = Modifier.size(metrics.cubeIconSize)
+                    modifier = Modifier.size(metrics.editIconSize)
                 )
                 Text(
-                    text = "${command.pattern.displayName} (${command.pattern.pulseCount} Pulse)",
+                    text = "${command.pattern.displayName} (${command.pattern.pulseCount}P)",
                     color = TextSecondary.copy(alpha = alpha),
-                    fontSize = metrics.cubeLabelSize,
-                    fontWeight = FontWeight.Medium
+                    fontSize = metrics.commandSubFontSize,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerCubeCard(
+    player: PlayerBox,
+    isSelected: Boolean,
+    metrics: DashboardMetrics,
+    modifier: Modifier = Modifier,
+    onToggle: () -> Unit,
+    onEditClick: () -> Unit
+) {
+    val cardBg = if (isSelected) PrimaryAccent.copy(alpha = 0.22f) else CardSurface
+    val cardBorder = if (isSelected) PrimaryAccent else CardBorder
+    val numberColor = if (isSelected) PrimaryAccent else SecondaryAccent
+
+    Surface(
+        color = cardBg,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(if (isSelected) 2.dp else 1.dp, cardBorder),
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onToggle)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (metrics.isTablet) 24.dp else 20.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onEditClick)
+                    .align(Alignment.TopEnd),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = "Edit Player #${player.number}",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(metrics.editIconSize)
+                )
+            }
+
+            Text(
+                text = "#${player.number}",
+                color = numberColor,
+                fontSize = metrics.playerNumberFontSize,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -645,6 +707,186 @@ private fun EditCommandDialog(
         confirmButton = {
             Button(
                 onClick = { onSave(commandName.trim(), selectedPattern) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditPlayerDialog(
+    player: PlayerBox,
+    benchPlayers: List<PlayerBox>,
+    onDismiss: () -> Unit,
+    onSaveNameAndNumber: (String, String) -> Unit,
+    onSubstitute: (Int) -> Unit
+) {
+    var playerName by remember(player) { mutableStateOf(player.name) }
+    var playerNumber by remember(player) { mutableStateOf(player.number) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardSurface,
+        titleContentColor = TextPrimary,
+        textContentColor = TextPrimary,
+        title = {
+            Text(
+                text = "Edit Active Player #${player.id}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Player Name",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = playerName,
+                    onValueChange = { playerName = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = PrimaryAccent,
+                        unfocusedBorderColor = CardBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Jersey Number",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = playerNumber,
+                    onValueChange = { playerNumber = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = PrimaryAccent,
+                        unfocusedBorderColor = CardBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                HorizontalDivider(color = CardBorder)
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Replace / Substitute Player",
+                    color = SecondaryAccent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Select a bench player to swap into this slot:",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 160.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (benchPlayers.isEmpty()) {
+                        Text(
+                            text = "No bench players available",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        benchPlayers.forEach { benchPlayer ->
+                            Surface(
+                                color = Color(0xFF161616),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSubstitute(benchPlayer.id)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Surface(
+                                            color = Color(0xFF263238),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "#${benchPlayer.number}",
+                                                color = SecondaryAccent,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = benchPlayer.name,
+                                            color = TextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Swap",
+                                        color = PrimaryAccent,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSaveNameAndNumber(playerName.trim(), playerNumber.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
             ) {
                 Text("Save")

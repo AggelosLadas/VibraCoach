@@ -63,6 +63,12 @@ data class CustomCommand(
     val pattern: PredeterminedPattern
 )
 
+data class PlayerBox(
+    val id: Int,
+    val name: String,
+    val number: String
+)
+
 object BasketballEvents {
     val WHISTLE = VibrationPattern(
         id = "evt_whistle",
