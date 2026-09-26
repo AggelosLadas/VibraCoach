@@ -20,15 +20,19 @@ volatile bool connected = false;
 volatile bool triggerConnectScreen = false;
 volatile bool triggerDisconnectScreen = false;
 
-volatile int pulsesRemaining = 0;
-volatile bool indicatorState = false;
-volatile unsigned long pulseTimer = 0;
-const int PULSE_SPEED = 90; // Duration (in ms) of each blink/buzz
+// --- Pattern Definitions (Even index = ON duration, Odd index = OFF duration, 0 = End) ---
+const int pat1[] = {250, 0};                            // Pattern 1: One crisp short pulse
+const int pat2[] = {150, 150, 150, 0};                  // Pattern 2: Two quick shorts
+const int pat3[] = {700, 200, 200, 0};                  // Pattern 3: One long, one short
+const int pat4[] = {100, 100, 100, 100, 100, 100, 800, 0}; // Pattern 4: 3 rapid pulses, 1 long hold
 
-// Controls both the LED and the Vibration Motor simultaneously
+const int* activePattern = nullptr;
+volatile int patternStep = 0;
+volatile unsigned long nextPatternTime = 0;
+
 void setIndicators(bool on) {
-    digitalWrite(LED_PIN, on ? LOW : HIGH); // LED is active-low
-    digitalWrite(MOTOR_PIN, on ? HIGH : LOW); // Motor is active-high
+    digitalWrite(LED_PIN, on ? LOW : HIGH); // LED active-low
+    digitalWrite(MOTOR_PIN, on ? HIGH : LOW); // Motor active-high
 }
 
 void showScreen(const char *title, const char *msg) {
@@ -41,23 +45,33 @@ void showScreen(const char *title, const char *msg) {
 }
 
 void processPatterns() {
-    if (pulsesRemaining > 0) {
-        if (millis() - pulseTimer >= PULSE_SPEED) {
-            pulseTimer = millis();
-            indicatorState = !indicatorState;
-            setIndicators(indicatorState);
-            pulsesRemaining--;
+    if (activePattern == nullptr) return;
+
+    if (millis() >= nextPatternTime) {
+        int duration = activePattern[patternStep];
+
+        if (duration == 0) { // End of pattern reached
+            setIndicators(false);
+            activePattern = nullptr;
+            return;
         }
-    } else {
-        setIndicators(false);
+
+        setIndicators(patternStep % 2 == 0); // Even steps are ON, Odd steps are OFF
+        nextPatternTime = millis() + duration;
+        patternStep++;
     }
 }
 
-void triggerSignal(int count) {
-    pulsesRemaining = (count * 2) - 1;
-    indicatorState = true;
-    setIndicators(true);
-    pulseTimer = millis();
+void triggerPattern(int patternId) {
+    switch (patternId) {
+        case 1: activePattern = pat1; break;
+        case 2: activePattern = pat2; break;
+        case 3: activePattern = pat3; break;
+        case 4: activePattern = pat4; break;
+        default: return;
+    }
+    patternStep = 0;
+    nextPatternTime = 0; // Trigger immediately on next loop
 }
 
 class MyServerCallbacks : public BLEServerCallbacks {
@@ -82,18 +96,18 @@ class MyCharCallbacks : public BLECharacteristicCallbacks {
         String patternKey = (pipeIdx != -1) ? rawMsg.substring(pipeIdx + 1) : rawMsg;
         patternKey.toLowerCase();
 
-        int count = 1;
+        int patternId = 1;
         if (patternKey.indexOf("pattern4") != -1 || patternKey.indexOf("alert") != -1) {
-            count = 4;
+            patternId = 4;
         } else if (patternKey.indexOf("pattern3") != -1 || patternKey.indexOf("timeout") != -1) {
-            count = 3;
+            patternId = 3;
         } else if (patternKey.indexOf("pattern2") != -1 || patternKey.indexOf("foul") != -1) {
-            count = 2;
+            patternId = 2;
         } else if (patternKey.indexOf("pattern1") != -1 || patternKey.indexOf("whistle") != -1) {
-            count = 1;
+            patternId = 1;
         }
 
-        triggerSignal(count);
+        triggerPattern(patternId);
     }
 };
 
